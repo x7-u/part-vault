@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚙️ PART_VAULT // Inventory Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scanline"></div>
+  <div class="crt-overlay"></div>
+
+  <header>
+    <div class="logo-row">
+      <span class="logo-icon">⚙️</span>
+      <h1>PART<span class="accent">_</span>VAULT</h1>
+      <span class="version">v2.0.86</span>
+    </div>
+    <p class="subtitle">&gt; INVENTORY MANAGEMENT SYSTEM <span class="blink">_</span></p>
+    <div class="stats-bar">
+      <span id="totalParts">TOTAL PARTS: 0</span>
+      <span id="totalValue">TOTAL VALUE: $0.00</span>
+      <span id="totalMarketValue">MKT VALUE: $0.00</span>
+      <span id="currentDate"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Add Part Panel -->
+    <section class="panel add-panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> ADD NEW COMPONENT
+      </div>
+      <form id="addPartForm">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; PART NAME</label>
+            <input type="text" id="partName" placeholder="e.g. RTX 4090, Ryzen 9 7950X..." required autocomplete="off">
+            <div id="autoCategory" class="auto-category hidden">
+              AUTO-DETECTED: <span id="detectedCat"></span>
+            </div>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE ($)</label>
+            <input type="number" id="partPrice" placeholder="0.00" step="0.01" min="0" required>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; MARKET VALUE ($)</label>
+            <input type="number" id="partMarketValue" placeholder="0.00" step="0.01" min="0">
+          </div>
+          <div class="form-group qty-group">
+            <label>&gt; QTY</label>
+            <input type="number" id="partQty" value="1" min="1" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; TAGS <span class="hint">(press Enter or comma to add)</span></label>
+            <div class="tag-input-wrapper" id="tagInputWrapper">
+              <div class="tag-chips" id="tagChips"></div>
+              <input type="text" id="partTags" placeholder="Type a tag and press Enter..." autocomplete="off">
+            </div>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; CATEGORY OVERRIDE</label>
+            <select id="categoryOverride">
+              <option value="">-- Auto Detect --</option>
+              <option value="CPU">CPU / Processor</option>
+              <option value="GPU">GPU / Graphics Card</option>
+              <option value="RAM">RAM / Memory</option>
+              <option value="Motherboard">Motherboard</option>
+              <option value="Storage">Storage (SSD/HDD/NVMe)</option>
+              <option value="PSU">Power Supply (PSU)</option>
+              <option value="Case">Case / Chassis</option>
+              <option value="Cooler">CPU Cooler / AIO</option>
+              <option value="Fans">Fans</option>
+              <option value="Monitor">Monitor / Display</option>
+              <option value="Peripherals">Peripherals (KB/Mouse)</option>
+              <option value="Networking">Networking</option>
+              <option value="Cables">Cables & Adapters</option>
+              <option value="Misc">Miscellaneous</option>
+              <option value="Unsorted">Unsorted</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn-add">[ ADD TO VAULT ]</button>
+      </form>
+    </section>
+
+    <!-- Search & Filter -->
+    <section class="panel filter-panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> SEARCH & FILTER
+      </div>
+      <div class="filter-row">
+        <input type="text" id="searchInput" placeholder="🔍 Search parts, tags, categories...">
+        <select id="filterCategory">
+          <option value="">All Categories</option>
+        </select>
+        <select id="filterTag">
+          <option value="">All Tags</option>
+        </select>
+        <button class="btn-clear" onclick="clearFilters()">CLEAR</button>
+        <button class="btn-export" onclick="exportToExcel()">[ EXPORT XLSX ]</button>
+        <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="importExcel(event)">
+        <button class="btn-import" onclick="document.getElementById('importFile').click()">[ IMPORT XLSX ]</button>
+      </div>
+      <div id="filteredStats" class="filtered-stats hidden"></div>
+    </section>
+
+    <!-- Inventory Grid -->
+    <section id="inventorySection">
+      <div id="inventoryGrid"></div>
+      <div id="emptyState" class="empty-state">
+        <pre class="ascii-art">
+   _______________
+  |  ___________  |
+  | |           | |
+  | |   EMPTY   | |
+  | |   VAULT   | |
+  | |___________| |
+  |_______________|
+  / ============= \
+ / ================ \
+/_____________________\
+        </pre>
+        <p>No components in the vault yet.</p>
+        <p class="hint">Add your first part above to get started!</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>PART_VAULT &copy; 2026 // All systems nominal // <span id="partCount">0</span> components tracked</p>
+  </footer>
+
+  <!-- Edit Modal -->
+  <div id="editModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> EDIT COMPONENT
+        <span class="modal-close" onclick="closeModal()">[X]</span>
+      </div>
+      <form id="editPartForm">
+        <input type="hidden" id="editPartId">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; PART NAME</label>
+            <input type="text" id="editPartName" required>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE ($)</label>
+            <input type="number" id="editPartPrice" step="0.01" min="0" required>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; MARKET VALUE ($)</label>
+            <input type="number" id="editPartMarketValue" placeholder="0.00" step="0.01" min="0">
+          </div>
+          <div class="form-group qty-group">
+            <label>&gt; QTY</label>
+            <input type="number" id="editPartQty" value="1" min="1" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; TAGS <span class="hint">(press Enter or comma to add)</span></label>
+            <div class="tag-input-wrapper" id="editTagInputWrapper">
+              <div class="tag-chips" id="editTagChips"></div>
+              <input type="text" id="editPartTags" placeholder="Type a tag and press Enter..." autocomplete="off">
+            </div>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; CATEGORY</label>
+            <select id="editPartCategory">
+              <option value="CPU">CPU / Processor</option>
+              <option value="GPU">GPU / Graphics Card</option>
+              <option value="RAM">RAM / Memory</option>
+              <option value="Motherboard">Motherboard</option>
+              <option value="Storage">Storage (SSD/HDD/NVMe)</option>
+              <option value="PSU">Power Supply (PSU)</option>
+              <option value="Case">Case / Chassis</option>
+              <option value="Cooler">CPU Cooler / AIO</option>
+              <option value="Fans">Fans</option>
+              <option value="Monitor">Monitor / Display</option>
+              <option value="Peripherals">Peripherals (KB/Mouse)</option>
+              <option value="Networking">Networking</option>
+              <option value="Cables">Cables & Adapters</option>
+              <option value="Misc">Miscellaneous</option>
+              <option value="Unsorted">Unsorted</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE CHANGES ]</button>
+          <button type="button" class="btn-delete" onclick="deletePart()">[ DELETE ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
