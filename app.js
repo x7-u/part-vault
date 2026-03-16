@@ -142,12 +142,25 @@ function saveParts(parts) {
   localStorage.setItem('partvault_inventory', JSON.stringify(parts));
 }
 
+function loadGraveyard() {
+  try {
+    return JSON.parse(localStorage.getItem('partvault_graveyard')) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGraveyard(gy) {
+  localStorage.setItem('partvault_graveyard', JSON.stringify(gy));
+}
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
 // --- State ---
 let parts = loadParts();
+let graveyard = loadGraveyard();
 
 // --- DOM refs ---
 const addForm = document.getElementById('addPartForm');
@@ -503,12 +516,56 @@ function deletePart() {
   const part = parts.find(p => p.id === id);
   if (!part) return;
 
-  if (confirm(`Delete "${part.name}" from the vault?`)) {
+  if (confirm(`Send "${part.name}" to the graveyard?`)) {
     parts = parts.filter(p => p.id !== id);
     saveParts(parts);
+
+    const gravePart = { ...part, dateRemoved: new Date().toISOString() };
+    graveyard.push(gravePart);
+    saveGraveyard(graveyard);
+
     closeModal();
-    showToast(`✗ Removed "${part.name}"`);
+    showToast(`☠ "${part.name}" sent to graveyard`);
     render();
+  }
+}
+
+// --- Graveyard ---
+function restoreFromGraveyard(id) {
+  const idx = graveyard.findIndex(p => p.id === id);
+  if (idx === -1) return;
+
+  const part = { ...graveyard[idx] };
+  delete part.dateRemoved;
+  graveyard.splice(idx, 1);
+  saveGraveyard(graveyard);
+
+  parts.push(part);
+  saveParts(parts);
+
+  showToast(`✓ Restored "${part.name}" to vault`);
+  render();
+}
+
+function permanentlyDelete(id) {
+  const part = graveyard.find(p => p.id === id);
+  if (!part) return;
+
+  if (confirm(`Permanently delete "${part.name}"? This cannot be undone.`)) {
+    graveyard = graveyard.filter(p => p.id !== id);
+    saveGraveyard(graveyard);
+    showToast(`✗ "${part.name}" permanently deleted`);
+    render();
+  }
+}
+
+function toggleGraveyard() {
+  const section = document.getElementById('graveyardSection');
+  const body = document.getElementById('graveyardBody');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+  } else {
+    body.style.display = 'none';
   }
 }
 
@@ -648,6 +705,48 @@ function render() {
   }
 
   inventoryGrid.innerHTML = html;
+
+  // Render graveyard
+  renderGraveyard();
+}
+
+function renderGraveyard() {
+  const graveyardSection = document.getElementById('graveyardSection');
+  const graveyardBody = document.getElementById('graveyardBody');
+  const graveyardCount = document.getElementById('graveyardCount');
+
+  if (graveyard.length === 0) {
+    graveyardSection.style.display = 'none';
+    return;
+  }
+
+  graveyardSection.style.display = '';
+  graveyardCount.textContent = `${graveyard.length} item${graveyard.length !== 1 ? 's' : ''}`;
+
+  const totalPaid = graveyard.reduce((s, p) => s + (p.price * (p.qty || 1)), 0);
+  const totalMkt = graveyard.reduce((s, p) => s + ((p.marketValue || 0) * (p.qty || 1)), 0);
+  document.getElementById('graveyardTotalPaid').textContent = `$${totalPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  document.getElementById('graveyardTotalMkt').textContent = `$${totalMkt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+  graveyardBody.querySelector('tbody').innerHTML = graveyard.map(p => {
+    const date = new Date(p.dateRemoved);
+    const dateStr = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const catInfo = CATEGORIES[p.category] || { emoji: '📦' };
+    return `
+      <tr>
+        <td><span class="part-name">${escapeHtml(p.name)}</span></td>
+        <td><span class="graveyard-cat">${catInfo.emoji} ${p.category}</span></td>
+        <td><span class="part-qty">${(p.qty || 1) > 1 ? 'x' + (p.qty || 1) : (p.qty || 1)}</span></td>
+        <td><span class="part-price">$${p.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></td>
+        <td><span class="part-mkt-value">${p.marketValue ? '$' + p.marketValue.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</span></td>
+        <td><span class="part-date">${dateStr}</span></td>
+        <td class="graveyard-actions">
+          <button class="btn-restore" onclick="restoreFromGraveyard('${p.id}')" title="Restore to vault">↩</button>
+          <button class="btn-perma-delete" onclick="permanentlyDelete('${p.id}')" title="Permanently delete">✕</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function toggleCategory(header) {
@@ -728,6 +827,38 @@ function exportToExcel() {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
+
+  // Graveyard sheet
+  if (graveyard.length > 0) {
+    const gyHeaders = ['Part Name', 'Category', 'Qty', 'Price Paid ($)', 'Market Value ($)', 'Total Paid ($)', 'Total Mkt Value ($)', 'Tags', 'Date Added', 'Date Removed'];
+    const gyRows = graveyard.map(p => {
+      const qty = p.qty || 1;
+      return [
+        p.name,
+        p.category,
+        qty,
+        p.price,
+        p.marketValue || '',
+        p.price * qty,
+        p.marketValue ? p.marketValue * qty : '',
+        p.tags.join(', '),
+        new Date(p.dateAdded).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        new Date(p.dateRemoved).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      ];
+    });
+    const gyTotalPaid = graveyard.reduce((s, p) => s + p.price * (p.qty || 1), 0);
+    const gyTotalMkt = graveyard.reduce((s, p) => s + (p.marketValue || 0) * (p.qty || 1), 0);
+    gyRows.push([]);
+    gyRows.push(['TOTALS', '', graveyard.reduce((s, p) => s + (p.qty || 1), 0), '', '', gyTotalPaid, gyTotalMkt, '', '', '']);
+
+    const gyWs = XLSX.utils.aoa_to_sheet([gyHeaders, ...gyRows]);
+    gyWs['!cols'] = [
+      { wch: 35 }, { wch: 15 }, { wch: 6 }, { wch: 14 },
+      { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 30 }, { wch: 15 }, { wch: 15 }
+    ];
+    XLSX.utils.book_append_sheet(wb, gyWs, 'Graveyard');
+  }
+
   const date = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `PART_VAULT_${date}.xlsx`);
   showToast('✓ Exported to Excel!');

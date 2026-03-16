@@ -130,6 +130,39 @@
         <p class="hint">Add your first part above to get started!</p>
       </div>
     </section>
+
+    <!-- Graveyard -->
+    <section id="graveyardSection" class="graveyard-section" style="display:none">
+      <div class="graveyard-block">
+        <div class="graveyard-header" onclick="toggleGraveyard()">
+          <div class="graveyard-title">
+            <span class="graveyard-icon">☠️</span>
+            GRAVEYARD
+          </div>
+          <div>
+            <span id="graveyardCount" class="graveyard-count">0 items</span>
+            <span id="graveyardTotalPaid" class="graveyard-total-paid">$0.00</span>
+            <span id="graveyardTotalMkt" class="graveyard-total-mkt">$0.00</span>
+          </div>
+        </div>
+        <div id="graveyardBody" class="graveyard-body">
+          <table class="parts-table graveyard-table">
+            <thead>
+              <tr>
+                <th style="width:25%">COMPONENT</th>
+                <th style="width:12%">CATEGORY</th>
+                <th style="width:6%">QTY</th>
+                <th style="width:10%">PRICE</th>
+                <th style="width:10%">MKT VALUE</th>
+                <th style="width:12%">REMOVED</th>
+                <th style="width:10%">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer>
