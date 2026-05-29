@@ -89,6 +89,21 @@
       </form>
     </section>
 
+    <!-- Builds / Parts Lists -->
+    <section class="panel builds-section">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> BUILDS // PC BUILD PLANNER
+        <div class="builds-header-actions">
+          <button type="button" class="btn-ai-settings" onclick="openAiSettings()">[ ⚙ AI ]</button>
+          <button type="button" class="btn-new-build" onclick="openBuildModal()">[ + NEW BUILD ]</button>
+        </div>
+      </div>
+      <div id="buildsList" class="builds-list"></div>
+      <div id="buildsEmpty" class="builds-empty">
+        <p>No builds yet. Create a parts list to track what to buy.</p>
+      </div>
+    </section>
+
     <!-- Search & Filter -->
     <section class="panel filter-panel">
       <div class="panel-header">
@@ -230,6 +245,141 @@
           <button type="button" class="btn-delete" onclick="deletePart()">[ DELETE ]</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Build Modal (create/edit build) -->
+  <div id="buildModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> <span id="buildModalTitle">NEW BUILD</span>
+        <span class="modal-close" onclick="closeBuildModal()">[X]</span>
+      </div>
+      <form id="buildForm">
+        <input type="hidden" id="buildIdField">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; BUILD NAME</label>
+            <input type="text" id="buildName" placeholder="e.g. Gaming Rig v2, Homelab NAS..." required autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; BUDGET ($) <span class="hint">(optional cap)</span></label>
+            <input type="number" id="buildBudget" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; NOTES <span class="hint">(optional — purpose, deadline)</span></label>
+            <input type="text" id="buildNotes" placeholder="1440p gaming // ready by Q3" autocomplete="off">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE BUILD ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Build Item Modal (add/edit part in build) -->
+  <div id="buildItemModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> <span id="buildItemModalTitle">ADD PART</span>
+        <span class="modal-close" onclick="closeBuildItemModal()">[X]</span>
+      </div>
+      <form id="buildItemForm">
+        <input type="hidden" id="buildItemBuildIdField">
+        <input type="hidden" id="buildItemIdField">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; PART NAME</label>
+            <input type="text" id="buildItemName" placeholder="e.g. RTX 5080, DDR5-6000 CL30 32GB" required autocomplete="off">
+          </div>
+          <div class="form-group qty-group">
+            <label>&gt; QTY</label>
+            <input type="number" id="buildItemQty" value="1" min="1" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; LINK <span class="hint">(optional)</span></label>
+            <input type="text" id="buildItemLink" placeholder="https://..." autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE ($)</label>
+            <input type="number" id="buildItemPrice" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>&gt; STATUS</label>
+            <select id="buildItemStatus">
+              <option value="in-progress">⋯ IN PROGRESS</option>
+              <option value="holding">📦 HOLDING</option>
+              <option value="sold">💰 SOLD</option>
+            </select>
+          </div>
+          <div class="form-group flex-1" id="soldPriceGroup" style="display:none">
+            <label>&gt; SOLD FOR ($) <span class="hint">(each)</span></label>
+            <input type="number" id="buildItemSoldPrice" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE ]</button>
+          <button type="button" class="btn-delete" id="buildItemDeleteBtn" onclick="deleteBuildItemFromModal()" style="display:none">[ REMOVE ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI Settings Modal (BYOK DeepSeek) -->
+  <div id="aiSettingsModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> AI SETTINGS // DEEPSEEK
+        <span class="modal-close" onclick="closeAiSettings()">[X]</span>
+      </div>
+      <form id="aiSettingsForm">
+        <div class="ai-note">
+          &gt; Bring your own DeepSeek key. It is stored only in this browser (localStorage)
+          and sent directly to the Base URL below — never to PART_VAULT or anywhere else.
+          New accounts get ~5M free tokens at <span class="ai-note-url">platform.deepseek.com</span>.
+          <br>&gt; Heads up: direct browser calls are often blocked by CORS. If TEST fails,
+          serve this page over http(s) and/or point BASE URL at your own proxy.
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; DEEPSEEK API KEY</label>
+            <input type="password" id="aiApiKey" placeholder="sk-..." autocomplete="off">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>&gt; MODEL</label>
+            <input type="text" id="aiModel" placeholder="deepseek-chat" autocomplete="off">
+          </div>
+          <div class="form-group flex-2">
+            <label>&gt; API BASE URL <span class="hint">(or your proxy)</span></label>
+            <input type="text" id="aiBaseUrl" placeholder="https://api.deepseek.com" autocomplete="off">
+          </div>
+        </div>
+        <div class="ai-status" id="aiSettingsStatus"></div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE ]</button>
+          <button type="button" class="btn-test" onclick="testAiConnection()">[ TEST CONNECTION ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI Suggestions Modal -->
+  <div id="aiSuggestModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> AI RECOMMENDATIONS <span id="aiSuggestBuildName" class="ai-suggest-buildname"></span>
+        <span class="modal-close" onclick="closeAiSuggest()">[X]</span>
+      </div>
+      <div id="aiSuggestBody" class="ai-suggest-body"></div>
     </div>
   </div>
 

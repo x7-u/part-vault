@@ -51,6 +51,21 @@ Parts are automatically sorted into collapsible category tabs:
 - **Import from Excel (`.xlsx` / `.xls` / `.csv`)** — upload an existing spreadsheet and have items auto-sorted into categories; items that can't be categorized land in the **Unsorted** tab for manual review
   - Flexible column mapping: recognises common headers like `Name`, `Part Name`, `Component`, `Price`, `Cost`, `Market Value`, `Qty`, `Quantity`, `Tags`, `Category`, etc.
 
+### PC Build Planner (Builds)
+- Create **builds / parts lists** — plan a new PC, an upgrade, a homelab, or a flip
+- **Per-build budget** — set an optional cap; each build shows **Budget / Committed / Remaining** with a meter that turns red when you go over
+- **Add / remove parts** with name, quantity, price, and an optional purchase link
+- **Status tracking** per part — mark each as **⋯ In Progress**, **📦 Holding** (acquired), or **💰 Sold**, either inline from the table or in the edit modal
+- **Sold price + realized P/L** — record what a part sold for and the build surfaces your profit/loss on flipped parts
+- Acquisition progress bar, status summary, and a "complete" state when every part is acquired
+
+### AI Recommendations (DeepSeek)
+- Per-build **[ ⚡ SUGGEST PARTS ]** button — DeepSeek recommends parts to complete or improve the build **within the remaining budget**
+- Recommendations prefer **parts you already own** (pulled from your inventory & graveyard) before suggesting new purchases
+- Basic **compatibility awareness** (CPU socket, RAM type, PSU wattage, motherboard form factor)
+- One-click **add a suggestion** to a build (owned parts come in as *Holding*; online picks as *In Progress* with a search link)
+- **Bring-your-own-key** — your DeepSeek key is stored only in your browser; see [AI Setup](#ai-setup-deepseek) below
+
 ### UX
 - Retro CRT / terminal aesthetic (scanlines, amber/cyan color palette, pixel fonts)
 - All data stored in **`localStorage`** — your inventory persists across browser sessions with no server needed
@@ -102,16 +117,43 @@ If a `Category` column is present and matches a known category, it is used direc
 
 ---
 
+## AI Setup (DeepSeek)
+
+AI recommendations are **opt-in** and use a **bring-your-own-key** model — PART_VAULT has no backend, so nothing is sent anywhere except directly from your browser to the API you configure.
+
+1. Get a DeepSeek API key at [platform.deepseek.com](https://platform.deepseek.com) (new accounts include a free token grant).
+2. In the **BUILDS // PC BUILD PLANNER** panel, click **[ ⚙ AI ]**.
+3. Paste your key, optionally set the model (default `deepseek-chat`) and **Base URL** (default `https://api.deepseek.com`), then hit **[ SAVE ]**.
+4. Use **[ TEST CONNECTION ]** to confirm it works, then click **[ ⚡ SUGGEST PARTS ]** on any build.
+
+Your key is stored only in this browser's `localStorage` under `partvault_ai_settings`.
+
+### A note on CORS / proxies
+
+Browsers block most direct calls to LLM APIs (CORS), and opening `index.html` straight from disk (`file://`) makes it worse. If **TEST CONNECTION** fails with a network/CORS error:
+
+- **Serve the page over http(s)** instead of `file://` (e.g. `python -m http.server`), and/or
+- **Point the Base URL at a small proxy you control** (e.g. a Vercel / Cloudflare Worker that forwards to `https://api.deepseek.com` and adds CORS headers). The key still lives only in your browser and is sent to *your* proxy.
+
+DeepSeek's API is **OpenAI-compatible**, so the same setup works with any compatible endpoint — just change the Base URL and model.
+
+### Estimated cost
+
+DeepSeek is among the cheapest APIs available — a single recommendation is a few thousand tokens, a tiny fraction of a cent, so the free grant covers a large number of suggestions. Prices change; check the [DeepSeek pricing page](https://api-docs.deepseek.com/quick_start/pricing) for current rates.
+
+---
+
 ## Tech Stack
 
 | Dependency | Usage |
 |------------|-------|
 | [SheetJS (xlsx)](https://sheetjs.com/) | Excel import & export |
+| [DeepSeek API](https://api-docs.deepseek.com/) | AI part recommendations (optional, bring-your-own-key) |
 | [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) | Pixel heading font |
 | [VT323](https://fonts.google.com/specimen/VT323) | Terminal body font |
 | [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono) | Monospace UI font |
 
-All dependencies are loaded via CDN. No build step, no `node_modules`.
+Front-end dependencies load via CDN; the optional AI features call the DeepSeek API directly with your own key. No build step, no `node_modules`.
 
 ---
 
