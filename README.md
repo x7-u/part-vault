@@ -66,6 +66,11 @@ Parts are automatically sorted into collapsible category tabs:
 - One-click **add a suggestion** to a build (owned parts arrive pre-ticked as *acquired*; online picks unticked, with a search link)
 - **Bring-your-own-key** — your DeepSeek key is stored only in your browser; see [AI Setup](#ai-setup-deepseek) below
 
+### Real Market Prices (eBay)
+- **⟳ eBay price** button in the edit-part modal — fills **Market Value** with the median of current eBay listings for that part
+- **⟳ eBay** on each AI suggestion — replaces the AI's rough estimate with a real eBay median (and the price used when you add it)
+- Runs through a small **proxy you control** (eBay blocks direct browser calls); your eBay secret never touches the browser — see [eBay Prices](#ebay-prices-optional) below
+
 ### UX
 - Retro CRT / terminal aesthetic (scanlines, amber/cyan color palette, pixel fonts)
 - All data stored in **`localStorage`** — your inventory persists across browser sessions with no server needed
@@ -94,8 +99,9 @@ Or simply [download the ZIP](../../archive/refs/heads/main.zip) and double-click
 ```
 part-vault/
 ├── index.html   # App shell, layout, modals
-├── app.js       # All logic — state, CRUD, search, import/export
-└── style.css    # Retro terminal theme, layout, animations
+├── app.js       # All logic — state, CRUD, search, import/export, builds, AI, eBay
+├── style.css    # Retro terminal theme, layout, animations
+└── proxy/       # Optional eBay price proxy (local Node + Cloudflare Worker)
 ```
 
 ---
@@ -143,12 +149,35 @@ DeepSeek is among the cheapest APIs available — a single recommendation is a f
 
 ---
 
+## eBay Prices (optional)
+
+Pull **real eBay prices** into the Market Value field and AI estimates. eBay can't be called from the browser (CORS) and your eBay secret must stay server-side, so PART_VAULT talks to a **tiny proxy you run**:
+
+```
+PART_VAULT (browser) ──► your proxy (holds the eBay secret, does OAuth) ──► eBay Browse API
+```
+
+1. Get free API credentials from the [eBay Developers Program](https://developer.ebay.com/) (App ID + Cert ID).
+2. Run the proxy — easiest is the **local Node** version, no cloud needed:
+   ```bash
+   EBAY_CLIENT_ID=... EBAY_CLIENT_SECRET=... node proxy/ebay-proxy.mjs
+   ```
+   (A Cloudflare Worker version is included for hosted sites.) Full instructions: [`proxy/README.md`](proxy/README.md).
+3. In **[ ⚙ SETTINGS ]**, set the **eBay Proxy URL** (e.g. `http://localhost:8787`) and **Marketplace** (e.g. `EBAY_US`), then **[ TEST EBAY ]**.
+
+Now the **⟳ eBay price** button (edit-part modal) and **⟳ eBay** (on AI suggestions) return the median of current listings.
+
+> The eBay Browse API returns **active listings** (asking prices), not sold comps — a solid market estimate. True sold-price history needs eBay's Marketplace Insights API (separate approval).
+
+---
+
 ## Tech Stack
 
 | Dependency | Usage |
 |------------|-------|
 | [SheetJS (xlsx)](https://sheetjs.com/) | Excel import & export |
 | [DeepSeek API](https://api-docs.deepseek.com/) | AI part recommendations (optional, bring-your-own-key) |
+| [eBay Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html) | Real market prices via a self-hosted proxy (optional) |
 | [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) | Pixel heading font |
 | [VT323](https://fonts.google.com/specimen/VT323) | Terminal body font |
 | [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono) | Monospace UI font |

@@ -206,6 +206,7 @@ let parts = loadParts();
 let graveyard = loadGraveyard();
 let builds = normalizeBuilds(loadBuilds());
 let aiSettings = loadAiSettings();
+let ebaySettings = loadEbaySettings();
 
 // --- DOM refs ---
 const addForm = document.getElementById('addPartForm');
@@ -520,6 +521,7 @@ function openEditModal(partId) {
   editTagInput.setTags(part.tags);
   editTagsInput.value = '';
   editCategoryInput.value = part.category;
+  if (ebayLookupNote) { ebayLookupNote.textContent = ''; ebayLookupNote.className = 'ebay-note'; }
 
   editModal.classList.remove('hidden');
 }
@@ -1422,6 +1424,10 @@ function openAiSettings() {
   aiBaseUrlInput.value = aiSettings.baseUrl || '';
   aiSettingsStatus.className = 'ai-status';
   aiSettingsStatus.textContent = aiSettings.apiKey ? '✓ Key saved in this browser.' : '';
+  ebayProxyUrlInput.value = ebaySettings.proxyUrl || '';
+  ebayMarketplaceInput.value = ebaySettings.marketplace || '';
+  ebaySettingsStatus.className = 'ai-status';
+  ebaySettingsStatus.textContent = ebaySettings.proxyUrl ? '✓ Proxy saved.' : '';
   aiSettingsModal.classList.remove('hidden');
   setTimeout(() => aiApiKeyInput.focus(), 0);
 }
@@ -1446,7 +1452,12 @@ aiSettingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
   aiSettings = readAiSettingsForm();
   saveAiSettings(aiSettings);
-  showToast('✓ AI settings saved');
+  ebaySettings = {
+    proxyUrl: ebayProxyUrlInput.value.trim(),
+    marketplace: ebayMarketplaceInput.value.trim()
+  };
+  saveEbaySettings(ebaySettings);
+  showToast('✓ Settings saved');
   closeAiSettings();
 });
 
@@ -1612,8 +1623,11 @@ function renderSuggestions(parsed) {
           <div class="ai-suggestion-reason">${escapeHtml(s.reason || '')}</div>
         </div>
         <div class="ai-suggestion-side">
-          <span class="ai-suggestion-price">${price ? '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</span>
-          <button class="ai-add-btn" onclick="addSuggestionToBuild(${idx})">[ + ADD ]</button>
+          <span class="ai-suggestion-price" id="aiprice-${idx}">${price ? '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</span>
+          <div class="ai-suggestion-btns">
+            <button class="ai-ebay-btn" onclick="ebayPriceForSuggestion(${idx})" title="Check real eBay price">⟳ eBay</button>
+            <button class="ai-add-btn" onclick="addSuggestionToBuild(${idx})">[ + ADD ]</button>
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -1669,6 +1683,126 @@ function closeAiSuggest() {
 aiSuggestModal.addEventListener('click', (e) => {
   if (e.target === aiSuggestModal) closeAiSuggest();
 });
+
+// ============================================
+// --- eBay price lookup (via your proxy) ---
+// ============================================
+
+function loadEbaySettings() {
+  try {
+    return JSON.parse(localStorage.getItem('partvault_ebay_settings')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveEbaySettings(s) {
+  localStorage.setItem('partvault_ebay_settings', JSON.stringify(s));
+}
+
+const ebayProxyUrlInput = document.getElementById('ebayProxyUrl');
+const ebayMarketplaceInput = document.getElementById('ebayMarketplace');
+const ebaySettingsStatus = document.getElementById('ebaySettingsStatus');
+const ebayLookupNote = document.getElementById('ebayLookupNote');
+
+function ebayConfigured() {
+  return !!(ebaySettings && ebaySettings.proxyUrl);
+}
+
+const money2 = v => '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+// Query the proxy for price stats on a search term.
+async function ebayLookup(query) {
+  if (!ebayConfigured()) throw new Error('NO_PROXY');
+  const base = ebaySettings.proxyUrl.replace(/\/+$/, '');
+  const market = ebaySettings.marketplace || 'EBAY_US';
+  const url = `${base}/price?q=${encodeURIComponent(query)}&marketplace=${encodeURIComponent(market)}`;
+  let res;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error('NETWORK');
+  }
+  if (!res.ok) {
+    let d = ''; try { d = (await res.text()).slice(0, 200); } catch {}
+    throw new Error(`HTTP ${res.status}${d ? ': ' + d : ''}`);
+  }
+  const data = await res.json();
+  if (data.error) throw new Error(String(data.error));
+  return data;  // { query, currency, count, min, max, median, avg, samples }
+}
+
+function describeEbayError(err) {
+  const msg = (err && err.message) || String(err);
+  if (msg === 'NO_PROXY') return 'No eBay proxy URL set. Add one in [ ⚙ SETTINGS ] (see proxy/README.md).';
+  if (msg === 'NETWORK') return 'Could not reach the proxy. Is it running, and is the URL correct?';
+  return msg;
+}
+
+async function testEbayConnection() {
+  ebaySettings = {
+    proxyUrl: ebayProxyUrlInput.value.trim(),
+    marketplace: ebayMarketplaceInput.value.trim()
+  };
+  saveEbaySettings(ebaySettings);
+  ebaySettingsStatus.className = 'ai-status loading';
+  ebaySettingsStatus.textContent = '… querying eBay for "RTX 4070" …';
+  try {
+    const r = await ebayLookup('RTX 4070');
+    ebaySettingsStatus.className = 'ai-status ok';
+    ebaySettingsStatus.textContent = `✓ Connected. ${r.count || 0} listings, median ${money2(r.median)} ${r.currency || ''}`;
+  } catch (err) {
+    ebaySettingsStatus.className = 'ai-status err';
+    ebaySettingsStatus.textContent = '✗ ' + describeEbayError(err);
+  }
+}
+
+// Fill the edit-part Market Value from eBay (median of active listings).
+async function fetchEbayMarketValue() {
+  const name = editNameInput.value.trim();
+  if (!name) { showToast('Enter a part name first'); return; }
+  if (!ebayConfigured()) { showToast('Set the eBay proxy in [ ⚙ SETTINGS ] first'); openAiSettings(); return; }
+  ebayLookupNote.className = 'ebay-note loading';
+  ebayLookupNote.textContent = '… looking up eBay …';
+  try {
+    const r = await ebayLookup(name);
+    if (!r.count) {
+      ebayLookupNote.className = 'ebay-note err';
+      ebayLookupNote.textContent = 'No eBay listings found for that name.';
+      return;
+    }
+    editMarketValueInput.value = r.median;
+    ebayLookupNote.className = 'ebay-note ok';
+    ebayLookupNote.textContent = `median of ${r.count} active listings (${money2(r.min)}–${money2(r.max)} ${r.currency})`;
+  } catch (err) {
+    ebayLookupNote.className = 'ebay-note err';
+    ebayLookupNote.textContent = '✗ ' + describeEbayError(err);
+  }
+}
+
+// Replace an AI suggestion's estimate with a real eBay median (also used on add).
+async function ebayPriceForSuggestion(idx) {
+  const s = currentSuggestions[idx];
+  if (!s) return;
+  if (!ebayConfigured()) { showToast('Set the eBay proxy in [ ⚙ SETTINGS ] first'); openAiSettings(); return; }
+  const priceEl = document.getElementById('aiprice-' + idx);
+  const prev = priceEl ? priceEl.innerHTML : '';
+  if (priceEl) priceEl.textContent = '…';
+  try {
+    const r = await ebayLookup(s.name || '');
+    if (!priceEl) return;
+    if (r.count) {
+      s.estPrice = r.median;   // so [ + ADD ] uses the real price
+      priceEl.innerHTML = `${money2(r.median)} <span class="ebay-tag">eBay ×${r.count}</span>`;
+    } else {
+      priceEl.innerHTML = prev;
+      showToast('No eBay listings found');
+    }
+  } catch (err) {
+    if (priceEl) priceEl.innerHTML = prev;
+    showToast('eBay: ' + describeEbayError(err));
+  }
+}
 
 // --- Init ---
 function init() {

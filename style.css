@@ -1512,3 +1512,84 @@ footer {
   box-shadow: 0 0 8px rgba(0, 255, 65, 0.08);
 }
 .build-block.status-block-holding { border-color: #16323a; }
+
+/* ===== SETTINGS MODAL SECTIONS + EBAY ===== */
+.settings-section-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: var(--green);
+  text-shadow: 0 0 6px var(--green);
+  margin: 4px 0 10px;
+}
+.settings-section-title .hint {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: var(--text-dim);
+  text-shadow: none;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 20px 0 16px;
+}
+
+/* eBay lookup button on the edit-part Market Value field */
+.btn-ebay-lookup {
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 2px;
+  align-self: flex-start;
+}
+.btn-ebay-lookup:hover {
+  background: rgba(0, 229, 255, 0.1);
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+}
+
+.ebay-note {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  min-height: 16px;
+}
+.ebay-note.loading { color: var(--amber); }
+.ebay-note.ok { color: var(--cyan); }
+.ebay-note.err { color: var(--red); }
+
+/* AI suggestion eBay button */
+.ai-suggestion-btns {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ai-ebay-btn {
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.ai-ebay-btn:hover { background: rgba(0, 229, 255, 0.12); }
+
+.ebay-tag {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: var(--cyan);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: 2px;
+  padding: 0 5px;
+}

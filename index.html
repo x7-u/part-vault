@@ -94,7 +94,7 @@
       <div class="panel-header">
         <span class="panel-icon">▸</span> BUILDS // PC BUILD PLANNER
         <div class="builds-header-actions">
-          <button type="button" class="btn-ai-settings" onclick="openAiSettings()">[ ⚙ AI ]</button>
+          <button type="button" class="btn-ai-settings" onclick="openAiSettings()">[ ⚙ SETTINGS ]</button>
           <button type="button" class="btn-new-build" onclick="openBuildModal()">[ + NEW BUILD ]</button>
         </div>
       </div>
@@ -205,6 +205,8 @@
           <div class="form-group flex-1">
             <label>&gt; MARKET VALUE ($)</label>
             <input type="number" id="editPartMarketValue" placeholder="0.00" step="0.01" min="0">
+            <button type="button" class="btn-ebay-lookup" onclick="fetchEbayMarketValue()">⟳ eBay price</button>
+            <div id="ebayLookupNote" class="ebay-note"></div>
           </div>
           <div class="form-group qty-group">
             <label>&gt; QTY</label>
@@ -348,10 +350,11 @@
   <div id="aiSettingsModal" class="modal hidden">
     <div class="modal-content panel">
       <div class="panel-header">
-        <span class="panel-icon">▸</span> AI SETTINGS // DEEPSEEK
+        <span class="panel-icon">▸</span> SETTINGS // AI + EBAY
         <span class="modal-close" onclick="closeAiSettings()">[X]</span>
       </div>
       <form id="aiSettingsForm">
+        <div class="settings-section-title">▸ DEEPSEEK <span class="hint">— AI recommendations</span></div>
         <div class="ai-note">
           &gt; Bring your own DeepSeek key. It is stored only in this browser (localStorage)
           and sent directly to the Base URL below — never to PART_VAULT or anywhere else.
@@ -376,9 +379,31 @@
           </div>
         </div>
         <div class="ai-status" id="aiSettingsStatus"></div>
+        <button type="button" class="btn-test" onclick="testAiConnection()">[ TEST DEEPSEEK ]</button>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section-title">▸ EBAY <span class="hint">— real market prices</span></div>
+        <div class="ai-note">
+          &gt; Pulls live eBay prices to fill Market Value and check AI estimates. eBay blocks
+          direct browser calls, so this needs a tiny proxy — see <span class="ai-note-url">proxy/README.md</span>.
+          Your eBay secret lives in the proxy, never in the browser.
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; EBAY PROXY URL</label>
+            <input type="text" id="ebayProxyUrl" placeholder="http://localhost:8787" autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; MARKETPLACE</label>
+            <input type="text" id="ebayMarketplace" placeholder="EBAY_US" autocomplete="off">
+          </div>
+        </div>
+        <div class="ai-status" id="ebaySettingsStatus"></div>
+        <button type="button" class="btn-test" onclick="testEbayConnection()">[ TEST EBAY ]</button>
+
         <div class="modal-actions">
-          <button type="submit" class="btn-add">[ SAVE ]</button>
-          <button type="button" class="btn-test" onclick="testAiConnection()">[ TEST CONNECTION ]</button>
+          <button type="submit" class="btn-add">[ SAVE ALL ]</button>
         </div>
       </form>
     </div>
