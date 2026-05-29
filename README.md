@@ -51,6 +51,34 @@ Parts are automatically sorted into collapsible category tabs:
 - **Import from Excel (`.xlsx` / `.xls` / `.csv`)** — upload an existing spreadsheet and have items auto-sorted into categories; items that can't be categorized land in the **Unsorted** tab for manual review
   - Flexible column mapping: recognises common headers like `Name`, `Part Name`, `Component`, `Price`, `Cost`, `Market Value`, `Qty`, `Quantity`, `Tags`, `Category`, etc.
 
+### PC Build Planner (Builds)
+- Create **builds / parts lists** — plan a new PC, an upgrade, a homelab, or a flip
+- **Status tabs** — builds are split into **⋯ In Progress / 📦 Holding / 💰 Sold** tabs (with counts); click a tab to show that group and hide the others
+- **Per-build budget** — set an optional cap; each build shows **Budget / Committed / Remaining** with a meter that turns red when you go over
+- **Build status** — tag the whole build In Progress / Holding / Sold (inline on the build header, or in the edit modal)
+- **Flip analysis** — record the build's **Price Listed** and **Price Sold**; once sold, the build surfaces **Cost / Listed / Sold / P&L** for data analysis
+- **Add / remove parts** with name, quantity, price, and an optional purchase link
+- **Acquired checkbox per part** — tick parts you have in hand; an acquisition progress bar fills when every part is acquired
+
+### Using your inventory in builds
+- **Drag** an inventory row onto a build — or use **[ 📦 FROM INVENTORY ]** to pick from a list — to allocate that part to the build
+- Allocated parts stay in your inventory but gain a **🔧 IN USE** tag; hover it to see which build(s) it's in and how many units are allocated
+- **Quantity is the limit**: 3× of a part can go to 3 builds (one unit each); a 4th allocation is blocked
+- **Marking a build Sold** removes its allocated units from inventory and moves them to the **Graveyard** — a multi-unit part drops by the amount used, and the graveyard entry's quantity grows (consolidated); a part that hits 0 leaves the inventory list
+- **Reverting a build out of Sold** (back to In Progress / Holding) restores those units to your inventory and shrinks the graveyard entry — recreating the part if it had fully sold out
+
+### AI Recommendations (DeepSeek)
+- Per-build **[ ⚡ SUGGEST PARTS ]** button — DeepSeek recommends parts to complete or improve the build **within the remaining budget**
+- Recommendations prefer **parts you already own** (pulled from your inventory & graveyard) before suggesting new purchases
+- Basic **compatibility awareness** (CPU socket, RAM type, PSU wattage, motherboard form factor)
+- One-click **add a suggestion** to a build (owned parts arrive pre-ticked as *acquired*; online picks unticked, with a search link)
+- **Bring-your-own-key** — your DeepSeek key is stored only in your browser; see [AI Setup](#ai-setup-deepseek) below
+
+### Real Market Prices (eBay)
+- **⟳ eBay price** button in the edit-part modal — fills **Market Value** with the median of current eBay listings for that part
+- **⟳ eBay** on each AI suggestion — replaces the AI's rough estimate with a real eBay median (and the price used when you add it)
+- Runs through a small **proxy you control** (eBay blocks direct browser calls); your eBay secret never touches the browser — see [eBay Prices](#ebay-prices-optional) below
+
 ### UX
 - Retro CRT / terminal aesthetic (scanlines, amber/cyan color palette, pixel fonts)
 - All data stored in **`localStorage`** — your inventory persists across browser sessions with no server needed
@@ -79,8 +107,9 @@ Or simply [download the ZIP](../../archive/refs/heads/main.zip) and double-click
 ```
 part-vault/
 ├── index.html   # App shell, layout, modals
-├── app.js       # All logic — state, CRUD, search, import/export
-└── style.css    # Retro terminal theme, layout, animations
+├── app.js       # All logic — state, CRUD, search, import/export, builds, AI, eBay
+├── style.css    # Retro terminal theme, layout, animations
+└── proxy/       # Optional eBay price proxy (local Node + Cloudflare Worker)
 ```
 
 ---
@@ -102,16 +131,66 @@ If a `Category` column is present and matches a known category, it is used direc
 
 ---
 
+## AI Setup (DeepSeek)
+
+AI recommendations are **opt-in** and use a **bring-your-own-key** model — PART_VAULT has no backend, so nothing is sent anywhere except directly from your browser to the API you configure.
+
+1. Get a DeepSeek API key at [platform.deepseek.com](https://platform.deepseek.com) (new accounts include a free token grant).
+2. In the **BUILDS // PC BUILD PLANNER** panel, click **[ ⚙ AI ]**.
+3. Paste your key, optionally set the model (default `deepseek-chat`) and **Base URL** (default `https://api.deepseek.com`), then hit **[ SAVE ]**.
+4. Use **[ TEST CONNECTION ]** to confirm it works, then click **[ ⚡ SUGGEST PARTS ]** on any build.
+
+Your key is stored only in this browser's `localStorage` under `partvault_ai_settings`.
+
+### A note on CORS / proxies
+
+Browsers block most direct calls to LLM APIs (CORS), and opening `index.html` straight from disk (`file://`) makes it worse. If **TEST CONNECTION** fails with a network/CORS error:
+
+- **Serve the page over http(s)** instead of `file://` (e.g. `python -m http.server`), and/or
+- **Point the Base URL at a small proxy you control** (e.g. a Vercel / Cloudflare Worker that forwards to `https://api.deepseek.com` and adds CORS headers). The key still lives only in your browser and is sent to *your* proxy.
+
+DeepSeek's API is **OpenAI-compatible**, so the same setup works with any compatible endpoint — just change the Base URL and model.
+
+### Estimated cost
+
+DeepSeek is among the cheapest APIs available — a single recommendation is a few thousand tokens, a tiny fraction of a cent, so the free grant covers a large number of suggestions. Prices change; check the [DeepSeek pricing page](https://api-docs.deepseek.com/quick_start/pricing) for current rates.
+
+---
+
+## eBay Prices (optional)
+
+Pull **real eBay prices** into the Market Value field and AI estimates. eBay can't be called from the browser (CORS) and your eBay secret must stay server-side, so PART_VAULT talks to a **tiny proxy you run**:
+
+```
+PART_VAULT (browser) ──► your proxy (holds the eBay secret, does OAuth) ──► eBay Browse API
+```
+
+1. Get free API credentials from the [eBay Developers Program](https://developer.ebay.com/) (App ID + Cert ID).
+2. Run the proxy — easiest is the **local Node** version, no cloud needed:
+   ```bash
+   EBAY_CLIENT_ID=... EBAY_CLIENT_SECRET=... node proxy/ebay-proxy.mjs
+   ```
+   (A Cloudflare Worker version is included for hosted sites.) Full instructions: [`proxy/README.md`](proxy/README.md).
+3. In **[ ⚙ SETTINGS ]**, set the **eBay Proxy URL** (e.g. `http://localhost:8787`) and **Marketplace** (e.g. `EBAY_US`), then **[ TEST EBAY ]**.
+
+Now the **⟳ eBay price** button (edit-part modal) and **⟳ eBay** (on AI suggestions) return the median of current listings.
+
+> The eBay Browse API returns **active listings** (asking prices), not sold comps — a solid market estimate. True sold-price history needs eBay's Marketplace Insights API (separate approval).
+
+---
+
 ## Tech Stack
 
 | Dependency | Usage |
 |------------|-------|
 | [SheetJS (xlsx)](https://sheetjs.com/) | Excel import & export |
+| [DeepSeek API](https://api-docs.deepseek.com/) | AI part recommendations (optional, bring-your-own-key) |
+| [eBay Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html) | Real market prices via a self-hosted proxy (optional) |
 | [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) | Pixel heading font |
 | [VT323](https://fonts.google.com/specimen/VT323) | Terminal body font |
 | [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono) | Monospace UI font |
 
-All dependencies are loaded via CDN. No build step, no `node_modules`.
+Front-end dependencies load via CDN; the optional AI features call the DeepSeek API directly with your own key. No build step, no `node_modules`.
 
 ---
 

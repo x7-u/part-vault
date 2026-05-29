@@ -89,6 +89,21 @@
       </form>
     </section>
 
+    <!-- Builds / Parts Lists -->
+    <section class="panel builds-section">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> BUILDS // PC BUILD PLANNER
+        <div class="builds-header-actions">
+          <button type="button" class="btn-ai-settings" onclick="openAiSettings()">[ ⚙ SETTINGS ]</button>
+          <button type="button" class="btn-new-build" onclick="openBuildModal()">[ + NEW BUILD ]</button>
+        </div>
+      </div>
+      <div id="buildsList" class="builds-list"></div>
+      <div id="buildsEmpty" class="builds-empty">
+        <p>No builds yet. Create a parts list to track what to buy.</p>
+      </div>
+    </section>
+
     <!-- Search & Filter -->
     <section class="panel filter-panel">
       <div class="panel-header">
@@ -190,6 +205,8 @@
           <div class="form-group flex-1">
             <label>&gt; MARKET VALUE ($)</label>
             <input type="number" id="editPartMarketValue" placeholder="0.00" step="0.01" min="0">
+            <button type="button" class="btn-ebay-lookup" onclick="fetchEbayMarketValue()">⟳ eBay price</button>
+            <div id="ebayLookupNote" class="ebay-note"></div>
           </div>
           <div class="form-group qty-group">
             <label>&gt; QTY</label>
@@ -230,6 +247,190 @@
           <button type="button" class="btn-delete" onclick="deletePart()">[ DELETE ]</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Build Modal (create/edit build) -->
+  <div id="buildModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> <span id="buildModalTitle">NEW BUILD</span>
+        <span class="modal-close" onclick="closeBuildModal()">[X]</span>
+      </div>
+      <form id="buildForm">
+        <input type="hidden" id="buildIdField">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; BUILD NAME</label>
+            <input type="text" id="buildName" placeholder="e.g. Gaming Rig v2, Homelab NAS..." required autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; BUDGET ($) <span class="hint">(optional cap)</span></label>
+            <input type="number" id="buildBudget" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; NOTES <span class="hint">(optional — purpose, deadline)</span></label>
+            <input type="text" id="buildNotes" placeholder="1440p gaming // ready by Q3" autocomplete="off">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>&gt; STATUS</label>
+            <select id="buildStatus">
+              <option value="in-progress">⋯ IN PROGRESS</option>
+              <option value="holding">📦 HOLDING</option>
+              <option value="sold">💰 SOLD</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE LISTED ($) <span class="hint">(optional)</span></label>
+            <input type="number" id="buildPriceListed" placeholder="0.00" step="0.01" min="0">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE SOLD ($) <span class="hint">(optional)</span></label>
+            <input type="number" id="buildPriceSold" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE BUILD ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Build Item Modal (add/edit part in build) -->
+  <div id="buildItemModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> <span id="buildItemModalTitle">ADD PART</span>
+        <span class="modal-close" onclick="closeBuildItemModal()">[X]</span>
+      </div>
+      <form id="buildItemForm">
+        <input type="hidden" id="buildItemBuildIdField">
+        <input type="hidden" id="buildItemIdField">
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; PART NAME</label>
+            <input type="text" id="buildItemName" placeholder="e.g. RTX 5080, DDR5-6000 CL30 32GB" required autocomplete="off">
+          </div>
+          <div class="form-group qty-group">
+            <label>&gt; QTY</label>
+            <input type="number" id="buildItemQty" value="1" min="1" step="1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; LINK <span class="hint">(optional)</span></label>
+            <input type="text" id="buildItemLink" placeholder="https://..." autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; PRICE ($)</label>
+            <input type="number" id="buildItemPrice" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label class="checkbox-label">
+              <input type="checkbox" id="buildItemAcquired">
+              <span>&gt; ACQUIRED <span class="hint">(you have this part in hand)</span></span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE ]</button>
+          <button type="button" class="btn-delete" id="buildItemDeleteBtn" onclick="deleteBuildItemFromModal()" style="display:none">[ REMOVE ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI Settings Modal (BYOK DeepSeek) -->
+  <div id="aiSettingsModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> SETTINGS // AI + EBAY
+        <span class="modal-close" onclick="closeAiSettings()">[X]</span>
+      </div>
+      <form id="aiSettingsForm">
+        <div class="settings-section-title">▸ DEEPSEEK <span class="hint">— AI recommendations</span></div>
+        <div class="ai-note">
+          &gt; Bring your own DeepSeek key. It is stored only in this browser (localStorage)
+          and sent directly to the Base URL below — never to PART_VAULT or anywhere else.
+          New accounts get ~5M free tokens at <span class="ai-note-url">platform.deepseek.com</span>.
+          <br>&gt; Heads up: direct browser calls are often blocked by CORS. If TEST fails,
+          serve this page over http(s) and/or point BASE URL at your own proxy.
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; DEEPSEEK API KEY</label>
+            <input type="password" id="aiApiKey" placeholder="sk-..." autocomplete="off">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label>&gt; MODEL</label>
+            <input type="text" id="aiModel" placeholder="deepseek-chat" autocomplete="off">
+          </div>
+          <div class="form-group flex-2">
+            <label>&gt; API BASE URL <span class="hint">(or your proxy)</span></label>
+            <input type="text" id="aiBaseUrl" placeholder="https://api.deepseek.com" autocomplete="off">
+          </div>
+        </div>
+        <div class="ai-status" id="aiSettingsStatus"></div>
+        <button type="button" class="btn-test" onclick="testAiConnection()">[ TEST DEEPSEEK ]</button>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-section-title">▸ EBAY <span class="hint">— real market prices</span></div>
+        <div class="ai-note">
+          &gt; Pulls live eBay prices to fill Market Value and check AI estimates. eBay blocks
+          direct browser calls, so this needs a tiny proxy — see <span class="ai-note-url">proxy/README.md</span>.
+          Your eBay secret lives in the proxy, never in the browser.
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label>&gt; EBAY PROXY URL</label>
+            <input type="text" id="ebayProxyUrl" placeholder="http://localhost:8787" autocomplete="off">
+          </div>
+          <div class="form-group flex-1">
+            <label>&gt; MARKETPLACE</label>
+            <input type="text" id="ebayMarketplace" placeholder="EBAY_US" autocomplete="off">
+          </div>
+        </div>
+        <div class="ai-status" id="ebaySettingsStatus"></div>
+        <button type="button" class="btn-test" onclick="testEbayConnection()">[ TEST EBAY ]</button>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn-add">[ SAVE ALL ]</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI Suggestions Modal -->
+  <div id="aiSuggestModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> AI RECOMMENDATIONS <span id="aiSuggestBuildName" class="ai-suggest-buildname"></span>
+        <span class="modal-close" onclick="closeAiSuggest()">[X]</span>
+      </div>
+      <div id="aiSuggestBody" class="ai-suggest-body"></div>
+    </div>
+  </div>
+
+  <!-- Add-from-inventory Picker Modal -->
+  <div id="invPickerModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> ADD FROM INVENTORY <span id="invPickerBuildName" class="ai-suggest-buildname"></span>
+        <span class="modal-close" onclick="closeInvPicker()">[X]</span>
+      </div>
+      <div class="inv-picker-body">
+        <input type="text" id="invPickerSearch" placeholder="🔍 Filter your inventory..." autocomplete="off">
+        <div id="invPickerList" class="inv-picker-list"></div>
+      </div>
     </div>
   </div>
 
