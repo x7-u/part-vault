@@ -54,16 +54,16 @@ Parts are automatically sorted into collapsible category tabs:
 ### PC Build Planner (Builds)
 - Create **builds / parts lists** — plan a new PC, an upgrade, a homelab, or a flip
 - **Per-build budget** — set an optional cap; each build shows **Budget / Committed / Remaining** with a meter that turns red when you go over
+- **Build status** — tag the whole build **⋯ In Progress**, **📦 Holding**, or **💰 Sold** (inline on the build header, or in the edit modal)
+- **Flip analysis** — record the build's **Price Listed** and **Price Sold**; once sold, the build surfaces **Cost / Listed / Sold / P&L** for data analysis
 - **Add / remove parts** with name, quantity, price, and an optional purchase link
-- **Status tracking** per part — mark each as **⋯ In Progress**, **📦 Holding** (acquired), or **💰 Sold**, either inline from the table or in the edit modal
-- **Sold price + realized P/L** — record what a part sold for and the build surfaces your profit/loss on flipped parts
-- Acquisition progress bar, status summary, and a "complete" state when every part is acquired
+- **Acquired checkbox per part** — tick parts you have in hand; an acquisition progress bar fills and the build hits a "complete" state when every part is acquired
 
 ### AI Recommendations (DeepSeek)
 - Per-build **[ ⚡ SUGGEST PARTS ]** button — DeepSeek recommends parts to complete or improve the build **within the remaining budget**
 - Recommendations prefer **parts you already own** (pulled from your inventory & graveyard) before suggesting new purchases
 - Basic **compatibility awareness** (CPU socket, RAM type, PSU wattage, motherboard form factor)
-- One-click **add a suggestion** to a build (owned parts come in as *Holding*; online picks as *In Progress* with a search link)
+- One-click **add a suggestion** to a build (owned parts arrive pre-ticked as *acquired*; online picks unticked, with a search link)
 - **Bring-your-own-key** — your DeepSeek key is stored only in your browser; see [AI Setup](#ai-setup-deepseek) below
 
 ### UX

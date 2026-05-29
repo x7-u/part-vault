@@ -1471,3 +1471,44 @@ footer {
   font-size: 14px;
   color: var(--text-dim);
 }
+
+/* ===== STATUS REMODEL: build-level status + acquired parts ===== */
+.build-status-select {
+  font-size: 15px;
+  padding: 4px 6px;
+}
+
+/* Acquired part rows (checked off) */
+.acquired-checkbox {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+}
+
+.build-items-table tr.acquired-row td { opacity: 0.6; }
+.build-items-table tr.acquired-row .part-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--green-dim);
+}
+
+/* Flip / data-analysis line (cost vs listed vs sold) */
+.build-sale-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 10px 0;
+  padding: 8px 12px;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--text-dim);
+  background: rgba(255, 0, 255, 0.04);
+  border-left: 2px solid var(--magenta);
+}
+
+/* Build-block accents by build status */
+.build-block.status-block-sold {
+  border-color: #1a3a2a;
+  box-shadow: 0 0 8px rgba(0, 255, 65, 0.08);
+}
+.build-block.status-block-holding { border-color: #16323a; }

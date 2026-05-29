@@ -182,12 +182,20 @@ function normalizeBuilds(list) {
   if (!Array.isArray(list)) return [];
   for (const b of list) {
     b.budget = parseFloat(b.budget) || 0;
+    b.priceListed = parseFloat(b.priceListed) || 0;
+    b.priceSold = parseFloat(b.priceSold) || 0;
+    if (!b.status || !BUILD_STATUSES[b.status]) b.status = 'in-progress';
     if (!Array.isArray(b.items)) b.items = [];
     for (const it of b.items) {
-      if (!it.status || !BUILD_STATUSES[it.status]) {
-        it.status = it.bought ? 'holding' : 'in-progress';  // legacy bought flag
+      // Derive the binary acquired flag from any earlier shape.
+      if (typeof it.acquired !== 'boolean') {
+        if (it.status) it.acquired = (it.status === 'holding' || it.status === 'sold');
+        else it.acquired = !!it.bought;
       }
-      delete it.bought;
+      delete it.bought;     // legacy
+      delete it.status;     // per-item status moved up to the build
+      delete it.soldPrice;  // sale price tracked at build level now
+      delete it.dateSold;
     }
   }
   return list;
@@ -1002,6 +1010,9 @@ const buildIdField = document.getElementById('buildIdField');
 const buildNameInput = document.getElementById('buildName');
 const buildNotesInput = document.getElementById('buildNotes');
 const buildBudgetInput = document.getElementById('buildBudget');
+const buildStatusInput = document.getElementById('buildStatus');
+const buildPriceListedInput = document.getElementById('buildPriceListed');
+const buildPriceSoldInput = document.getElementById('buildPriceSold');
 
 const buildItemModal = document.getElementById('buildItemModal');
 const buildItemForm = document.getElementById('buildItemForm');
@@ -1012,12 +1023,8 @@ const buildItemNameInput = document.getElementById('buildItemName');
 const buildItemLinkInput = document.getElementById('buildItemLink');
 const buildItemPriceInput = document.getElementById('buildItemPrice');
 const buildItemQtyInput = document.getElementById('buildItemQty');
-const buildItemStatusInput = document.getElementById('buildItemStatus');
-const buildItemSoldPriceInput = document.getElementById('buildItemSoldPrice');
-const soldPriceGroup = document.getElementById('soldPriceGroup');
+const buildItemAcquiredInput = document.getElementById('buildItemAcquired');
 const buildItemDeleteBtn = document.getElementById('buildItemDeleteBtn');
-
-buildItemStatusInput.addEventListener('change', updateSoldPriceVisibility);
 
 // Only accept http(s) URLs. If no protocol is given, prepend https://.
 function sanitizeLink(url) {
@@ -1039,12 +1046,18 @@ function openBuildModal(buildId) {
     buildNameInput.value = b.name;
     buildNotesInput.value = b.notes || '';
     buildBudgetInput.value = b.budget || '';
+    buildStatusInput.value = b.status || 'in-progress';
+    buildPriceListedInput.value = b.priceListed || '';
+    buildPriceSoldInput.value = b.priceSold || '';
   } else {
     buildModalTitle.textContent = 'NEW BUILD';
     buildIdField.value = '';
     buildNameInput.value = '';
     buildNotesInput.value = '';
     buildBudgetInput.value = '';
+    buildStatusInput.value = 'in-progress';
+    buildPriceListedInput.value = '';
+    buildPriceSoldInput.value = '';
   }
   buildModal.classList.remove('hidden');
   setTimeout(() => buildNameInput.focus(), 0);
@@ -1064,6 +1077,9 @@ buildForm.addEventListener('submit', (e) => {
   const name = buildNameInput.value.trim();
   const notes = buildNotesInput.value.trim();
   const budget = parseFloat(buildBudgetInput.value) || 0;
+  const status = buildStatusInput.value || 'in-progress';
+  const priceListed = parseFloat(buildPriceListedInput.value) || 0;
+  const priceSold = parseFloat(buildPriceSoldInput.value) || 0;
   if (!name) return;
 
   if (id) {
@@ -1072,6 +1088,9 @@ buildForm.addEventListener('submit', (e) => {
       b.name = name;
       b.notes = notes;
       b.budget = budget;
+      b.status = status;
+      b.priceListed = priceListed;
+      b.priceSold = priceSold;
     }
     showToast(`✓ Build "${name}" updated`);
   } else {
@@ -1080,6 +1099,9 @@ buildForm.addEventListener('submit', (e) => {
       name,
       notes,
       budget,
+      status,
+      priceListed,
+      priceSold,
       items: [],
       dateCreated: new Date().toISOString()
     });
@@ -1121,8 +1143,7 @@ function openBuildItemModal(buildId, itemId) {
     buildItemLinkInput.value = item.link || '';
     buildItemPriceInput.value = item.price || '';
     buildItemQtyInput.value = item.qty || 1;
-    buildItemStatusInput.value = item.status || 'in-progress';
-    buildItemSoldPriceInput.value = item.soldPrice || '';
+    buildItemAcquiredInput.checked = !!item.acquired;
     buildItemDeleteBtn.style.display = '';
   } else {
     buildItemModalTitle.textContent = 'ADD PART';
@@ -1131,11 +1152,9 @@ function openBuildItemModal(buildId, itemId) {
     buildItemLinkInput.value = '';
     buildItemPriceInput.value = '';
     buildItemQtyInput.value = 1;
-    buildItemStatusInput.value = 'in-progress';
-    buildItemSoldPriceInput.value = '';
+    buildItemAcquiredInput.checked = false;
     buildItemDeleteBtn.style.display = 'none';
   }
-  updateSoldPriceVisibility();
   buildItemModal.classList.remove('hidden');
   setTimeout(() => buildItemNameInput.focus(), 0);
 }
@@ -1160,8 +1179,7 @@ buildItemForm.addEventListener('submit', (e) => {
   const link = sanitizeLink(buildItemLinkInput.value);
   const price = parseFloat(buildItemPriceInput.value) || 0;
   const qty = parseInt(buildItemQtyInput.value) || 1;
-  const status = buildItemStatusInput.value || 'in-progress';
-  const soldPrice = parseFloat(buildItemSoldPriceInput.value) || 0;
+  const acquired = buildItemAcquiredInput.checked;
   const now = new Date().toISOString();
 
   if (itemId) {
@@ -1171,14 +1189,12 @@ buildItemForm.addEventListener('submit', (e) => {
       item.link = link;
       item.price = price;
       item.qty = qty;
-      applyItemStatus(item, status, now);
-      item.soldPrice = status === 'sold' ? soldPrice : 0;
+      setAcquired(item, acquired, now);
     }
     showToast(`✓ Updated "${name}"`);
   } else {
-    const item = { id: generateId(), name, link, price, qty, status, dateAdded: now };
-    applyItemStatus(item, status, now);
-    if (status === 'sold') item.soldPrice = soldPrice;
+    const item = { id: generateId(), name, link, price, qty, acquired, dateAdded: now };
+    setAcquired(item, acquired, now);
     b.items.push(item);
     showToast(`✓ Added "${name}" to ${b.name}`);
   }
@@ -1203,38 +1219,32 @@ function deleteBuildItemFromModal() {
   renderBuilds();
 }
 
-// Apply a status to an item and manage its timestamps.
-function applyItemStatus(item, status, now) {
+// Set a part's acquired flag and manage its timestamp.
+function setAcquired(item, acquired, now) {
   now = now || new Date().toISOString();
-  const prev = item.status;
-  item.status = status;
-  if (status === 'holding' && !item.dateAcquired) item.dateAcquired = now;
-  if (status === 'sold') {
-    if (!item.dateAcquired) item.dateAcquired = now;
-    if (prev !== 'sold') item.dateSold = now;
-  }
-  if (status === 'in-progress') {
-    delete item.dateAcquired;
-    delete item.dateSold;
-    item.soldPrice = 0;
-  }
+  item.acquired = !!acquired;
+  if (item.acquired && !item.dateAcquired) item.dateAcquired = now;
+  if (!item.acquired) delete item.dateAcquired;
 }
 
-// Inline status change from the per-row dropdown.
-function setItemStatus(buildId, itemId, status) {
+// Inline acquired toggle from the per-row checkbox.
+function setItemAcquired(buildId, itemId, checked) {
   const b = builds.find(x => x.id === buildId);
   if (!b) return;
   const item = b.items.find(x => x.id === itemId);
   if (!item) return;
-  applyItemStatus(item, status);
+  setAcquired(item, checked);
   saveBuilds(builds);
   renderBuilds();
 }
 
-// Show the "sold for" field only when status is Sold.
-function updateSoldPriceVisibility() {
-  if (!soldPriceGroup) return;
-  soldPriceGroup.style.display = buildItemStatusInput.value === 'sold' ? '' : 'none';
+// Inline build-status change from the header dropdown.
+function setBuildStatus(buildId, status) {
+  const b = builds.find(x => x.id === buildId);
+  if (!b || !BUILD_STATUSES[status]) return;
+  b.status = status;
+  saveBuilds(builds);
+  renderBuilds();
 }
 
 // --- Render builds ---
@@ -1248,9 +1258,10 @@ function renderBuilds() {
   buildsEmptyEl.style.display = 'none';
 
   buildsListEl.innerHTML = builds.map(b => {
+    const status = BUILD_STATUSES[b.status] ? b.status : 'in-progress';
+    const st = BUILD_STATUSES[status];
     const totalUnits = b.items.reduce((s, i) => s + (i.qty || 1), 0);
-    const acquiredUnits = b.items.filter(i => i.status === 'holding' || i.status === 'sold')
-                                  .reduce((s, i) => s + (i.qty || 1), 0);
+    const acquiredUnits = b.items.filter(i => i.acquired).reduce((s, i) => s + (i.qty || 1), 0);
     const committed = b.items.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
     const budget = b.budget || 0;
     const remaining = budget - committed;
@@ -1259,21 +1270,11 @@ function renderBuilds() {
     const progressPct = totalUnits > 0 ? (acquiredUnits / totalUnits) * 100 : 0;
     const complete = totalUnits > 0 && acquiredUnits === totalUnits;
 
-    // Realized profit/loss from sold items that recorded a sale price.
-    const soldProceeds = b.items.filter(i => i.status === 'sold')
-                                .reduce((s, i) => s + (i.soldPrice || 0) * (i.qty || 1), 0);
-    const soldCost = b.items.filter(i => i.status === 'sold' && i.soldPrice)
-                            .reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
-    const realized = soldProceeds - soldCost;
-
-    // Status summary chips.
-    const counts = { 'in-progress': 0, 'holding': 0, 'sold': 0 };
-    b.items.forEach(i => { counts[i.status] = (counts[i.status] || 0) + 1; });
-    const summaryParts = [];
-    if (counts['in-progress']) summaryParts.push(`⋯ ${counts['in-progress']}`);
-    if (counts['holding']) summaryParts.push(`📦 ${counts['holding']}`);
-    if (counts['sold']) summaryParts.push(`💰 ${counts['sold']}`);
-    const statusSummary = summaryParts.join(' · ') || '—';
+    // Flip economics: what the whole build cost vs what it listed/sold for.
+    const priceListed = b.priceListed || 0;
+    const priceSold = b.priceSold || 0;
+    const realized = priceSold - committed;            // profit once sold
+    const hasSaleData = priceListed > 0 || priceSold > 0;
 
     const money = v => '$' + (v || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
@@ -1282,28 +1283,21 @@ function renderBuilds() {
       : b.items.map(i => {
           const qty = i.qty || 1;
           const lineTotal = (i.price || 0) * qty;
-          const st = BUILD_STATUSES[i.status] || BUILD_STATUSES['in-progress'];
           const linkHtml = i.link
             ? `<a href="${escapeHtml(i.link)}" target="_blank" rel="noopener noreferrer" class="build-item-link" onclick="event.stopPropagation()">LINK ↗</a>`
             : '<span class="build-item-nolink">—</span>';
-          const soldNote = (i.status === 'sold' && i.soldPrice)
-            ? `<span class="sold-note">→ ${money(i.soldPrice * qty)}</span>` : '';
-          const statusSelect = `
-            <select class="row-status-select ${st.cls}" title="Set status"
-              onclick="event.stopPropagation()"
-              onchange="event.stopPropagation(); setItemStatus('${b.id}', '${i.id}', this.value)">
-              <option value="in-progress" ${i.status === 'in-progress' ? 'selected' : ''}>⋯ In progress</option>
-              <option value="holding" ${i.status === 'holding' ? 'selected' : ''}>📦 Holding</option>
-              <option value="sold" ${i.status === 'sold' ? 'selected' : ''}>💰 Sold</option>
-            </select>`;
           return `
-            <tr class="${i.status === 'sold' ? 'sold-row' : ''}" onclick="openBuildItemModal('${b.id}', '${i.id}')">
-              <td>${statusSelect}</td>
+            <tr class="${i.acquired ? 'acquired-row' : ''}" onclick="openBuildItemModal('${b.id}', '${i.id}')">
+              <td>
+                <input type="checkbox" class="acquired-checkbox" ${i.acquired ? 'checked' : ''}
+                  title="Mark acquired"
+                  onclick="event.stopPropagation(); setItemAcquired('${b.id}', '${i.id}', this.checked)">
+              </td>
               <td><span class="part-name">${escapeHtml(i.name)}</span></td>
               <td>${linkHtml}</td>
               <td><span class="part-qty">${qty > 1 ? 'x' + qty : qty}</span></td>
               <td><span class="part-price">${i.price ? money(i.price) : '—'}</span></td>
-              <td><span class="part-mkt-value">${lineTotal ? money(lineTotal) : '—'}</span> ${soldNote}</td>
+              <td><span class="part-mkt-value">${lineTotal ? money(lineTotal) : '—'}</span></td>
             </tr>
           `;
         }).join('');
@@ -1318,22 +1312,40 @@ function renderBuilds() {
         <div class="build-budget-fill ${overBudget ? 'over' : ''}" style="width:${usedPct}%"></div>
       </div>` : '';
 
-    const realizedHtml = realized !== 0
+    // Flip / data-analysis line (shown once a listed or sold price exists).
+    const saleLine = hasSaleData ? `
+      <div class="build-sale-line">
+        <span>COST ${money(committed)}</span>
+        ${priceListed ? `<span>LISTED ${money(priceListed)}</span>` : ''}
+        ${priceSold ? `<span>SOLD ${money(priceSold)}</span>` : ''}
+        ${priceSold ? `<span class="build-realized ${realized >= 0 ? 'pos' : 'neg'}">P/L ${money(realized)}</span>` : ''}
+      </div>` : '';
+
+    const statusSelect = `
+      <select class="row-status-select build-status-select ${st.cls}" title="Build status"
+        onclick="event.stopPropagation()"
+        onchange="event.stopPropagation(); setBuildStatus('${b.id}', this.value)">
+        <option value="in-progress" ${status === 'in-progress' ? 'selected' : ''}>⋯ In progress</option>
+        <option value="holding" ${status === 'holding' ? 'selected' : ''}>📦 Holding</option>
+        <option value="sold" ${status === 'sold' ? 'selected' : ''}>💰 Sold</option>
+      </select>`;
+
+    const headerPL = (status === 'sold' && priceSold)
       ? `<span class="build-realized ${realized >= 0 ? 'pos' : 'neg'}">P/L ${money(realized)}</span>` : '';
     const spentLabel = budget > 0 ? `${money(committed)} / ${money(budget)}` : money(committed);
 
     return `
-      <div class="build-block ${complete ? 'build-complete' : ''} ${overBudget ? 'build-over' : ''}">
+      <div class="build-block status-block-${status} ${complete ? 'build-complete' : ''} ${overBudget ? 'build-over' : ''}">
         <div class="build-header" onclick="toggleBuildBody(this)">
           <div class="build-title">
             <span class="build-icon">🛒</span>
             ${escapeHtml(b.name)}
           </div>
           <div class="build-meta">
-            <span class="build-status-summary">${statusSummary}</span>
+            ${statusSelect}
             <span class="build-progress">${acquiredUnits} / ${totalUnits} acquired</span>
             <span class="build-spent ${overBudget ? 'over-budget' : ''}">${spentLabel}</span>
-            ${realizedHtml}
+            ${headerPL}
             <button class="build-action-btn build-suggest-btn" onclick="event.stopPropagation(); suggestParts('${b.id}')" title="AI part recommendations">⚡</button>
             <button class="build-action-btn build-edit-btn" onclick="event.stopPropagation(); openBuildModal('${b.id}')" title="Edit build">✎</button>
             <button class="build-action-btn build-delete-btn" onclick="event.stopPropagation(); deleteBuild('${b.id}')" title="Delete build">✕</button>
@@ -1342,18 +1354,19 @@ function renderBuilds() {
         <div class="build-body">
           ${b.notes ? `<div class="build-notes">&gt; ${escapeHtml(b.notes)}</div>` : ''}
           ${budgetMeter}
+          ${saleLine}
           <div class="build-progress-bar">
             <div class="build-progress-fill" style="width:${progressPct}%"></div>
           </div>
           <table class="parts-table build-items-table">
             <thead>
               <tr>
-                <th style="width:16%">STATUS</th>
-                <th style="width:30%">PART</th>
-                <th style="width:11%">LINK</th>
-                <th style="width:7%">QTY</th>
-                <th style="width:13%">PRICE</th>
-                <th style="width:23%">TOTAL</th>
+                <th style="width:6%">✓</th>
+                <th style="width:39%">PART</th>
+                <th style="width:12%">LINK</th>
+                <th style="width:8%">QTY</th>
+                <th style="width:15%">PRICE</th>
+                <th style="width:20%">TOTAL</th>
               </tr>
             </thead>
             <tbody>${itemsHtml}</tbody>
@@ -1507,7 +1520,7 @@ let currentSuggestBuildId = null;
 function buildAiContext(b) {
   const committed = b.items.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
   const currentParts = b.items.map(i => ({
-    name: i.name, qty: i.qty || 1, price: i.price || 0, status: i.status
+    name: i.name, qty: i.qty || 1, price: i.price || 0, acquired: !!i.acquired
   }));
   // Owned parts the model may reuse (capped to keep the prompt small).
   const inventory = parts.slice(0, 80).map(p => ({
@@ -1634,7 +1647,7 @@ function addSuggestionToBuild(idx) {
       : '',
     price: matched ? (matched.price || 0) : price,
     qty: 1,
-    status: matched ? 'holding' : 'in-progress',
+    acquired: !!matched,
     dateAdded: now
   };
   if (matched) { item.sourcePartId = matched.id; item.dateAcquired = now; }
