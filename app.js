@@ -185,6 +185,7 @@ function normalizeBuilds(list) {
     b.priceListed = parseFloat(b.priceListed) || 0;
     b.priceSold = parseFloat(b.priceSold) || 0;
     if (!b.status || !BUILD_STATUSES[b.status]) b.status = 'in-progress';
+    b.soldSettled = !!b.soldSettled;  // inventory already moved to graveyard?
     if (!Array.isArray(b.items)) b.items = [];
     for (const it of b.items) {
       // Derive the binary acquired flag from any earlier shape.
@@ -207,6 +208,11 @@ let graveyard = loadGraveyard();
 let builds = normalizeBuilds(loadBuilds());
 let aiSettings = loadAiSettings();
 let ebaySettings = loadEbaySettings();
+
+// Which inventory part is used in which (active) build. Rebuilt each render().
+let allocationMap = {};
+// Active build-status tab (in-progress | holding | sold).
+let currentBuildTab = 'in-progress';
 
 // --- DOM refs ---
 const addForm = document.getElementById('addPartForm');
@@ -541,6 +547,7 @@ document.addEventListener('keydown', (e) => {
     closeBuildItemModal();
     closeAiSettings();
     closeAiSuggest();
+    closeInvPicker();
   }
 });
 
@@ -653,6 +660,7 @@ function getFilteredParts() {
 // --- Render ---
 function render() {
   const filtered = getFilteredParts();
+  allocationMap = computeAllocationMap();
 
   // Update stats
   const totalValue = parts.reduce((sum, p) => sum + (p.price * (p.qty || 1)), 0);
@@ -694,6 +702,8 @@ function render() {
   if (filtered.length === 0) {
     inventoryGrid.innerHTML = '';
     emptyState.style.display = 'block';
+    renderGraveyard();   // builds/graveyard must still update when inventory is empty/filtered out
+    renderBuilds();
     return;
   }
 
@@ -739,9 +749,15 @@ function render() {
                   return `<span class="tag tag-color-${ci}">${t}</span>`;
                 }).join('');
                 const qty = p.qty || 1;
+                const alloc = allocationMap[p.id];
+                let inUseTag = '';
+                if (alloc && alloc.units > 0) {
+                  const tip = 'In ' + alloc.builds.map(x => `${x.name} (${x.units})`).join(', ') + ` — ${alloc.units}/${qty} allocated`;
+                  inUseTag = ` <span class="in-use-tag" title="${escapeHtml(tip).replace(/"/g, '&quot;')}">🔧 IN USE${alloc.units > 1 ? ' ×' + alloc.units : ''}</span>`;
+                }
                 return `
-                  <tr onclick="openEditModal('${p.id}')">
-                    <td><span class="part-name">${escapeHtml(p.name)}</span></td>
+                  <tr draggable="true" ondragstart="handleInvDragStart(event, '${p.id}')" onclick="openEditModal('${p.id}')" title="Drag onto a build to allocate">
+                    <td><span class="part-name">${escapeHtml(p.name)}</span>${inUseTag}</td>
                     <td><span class="part-qty">${qty > 1 ? 'x' + qty : qty}</span></td>
                     <td><span class="part-price">$${p.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></td>
                     <td><span class="part-mkt-value">${p.marketValue ? '$' + p.marketValue.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}</span></td>
@@ -1087,12 +1103,15 @@ buildForm.addEventListener('submit', (e) => {
   if (id) {
     const b = builds.find(x => x.id === id);
     if (b) {
+      const prevStatus = b.status;
       b.name = name;
       b.notes = notes;
       b.budget = budget;
       b.status = status;
       b.priceListed = priceListed;
       b.priceSold = priceSold;
+      if (!handleSoldTransition(b)) { b.status = prevStatus; }
+      currentBuildTab = b.status;
     }
     showToast(`✓ Build "${name}" updated`);
   } else {
@@ -1104,15 +1123,17 @@ buildForm.addEventListener('submit', (e) => {
       status,
       priceListed,
       priceSold,
+      soldSettled: false,
       items: [],
       dateCreated: new Date().toISOString()
     });
+    currentBuildTab = status;
     showToast(`✓ Build "${name}" created`);
   }
 
   saveBuilds(builds);
   closeBuildModal();
-  renderBuilds();
+  render();
 });
 
 function deleteBuild(buildId) {
@@ -1122,7 +1143,7 @@ function deleteBuild(buildId) {
   builds = builds.filter(x => x.id !== buildId);
   saveBuilds(builds);
   showToast(`✗ Build "${b.name}" deleted`);
-  renderBuilds();
+  render();
 }
 
 function toggleBuildBody(header) {
@@ -1203,7 +1224,7 @@ buildItemForm.addEventListener('submit', (e) => {
 
   saveBuilds(builds);
   closeBuildItemModal();
-  renderBuilds();
+  render();
 });
 
 function deleteBuildItemFromModal() {
@@ -1218,7 +1239,7 @@ function deleteBuildItemFromModal() {
   saveBuilds(builds);
   closeBuildItemModal();
   showToast(`✗ Removed "${item.name}"`);
-  renderBuilds();
+  render();
 }
 
 // Set a part's acquired flag and manage its timestamp.
@@ -1240,14 +1261,219 @@ function setItemAcquired(buildId, itemId, checked) {
   renderBuilds();
 }
 
+// Move units to the graveyard, consolidating by source part id (qty grows).
+function addToGraveyard(part, units, build) {
+  const now = new Date().toISOString();
+  const existing = part.id ? graveyard.find(g => g.sourcePartId === part.id) : null;
+  if (existing) {
+    existing.qty = (existing.qty || 1) + units;
+    existing.dateRemoved = now;
+    if (build) existing.soldFromBuild = build.name;
+  } else {
+    graveyard.push({
+      id: generateId(),
+      name: part.name,
+      price: part.price || 0,
+      marketValue: part.marketValue || 0,
+      qty: units,
+      tags: [...(part.tags || [])],
+      category: part.category,
+      dateAdded: part.dateAdded || now,
+      dateRemoved: now,
+      sourcePartId: part.id || null,
+      soldFromBuild: build ? build.name : ''
+    });
+  }
+}
+
+// On sale: pull each sourced part's used units out of inventory into the graveyard.
+function settleSoldBuild(b) {
+  if (b.soldSettled) return 0;
+  let moved = 0;
+  for (const it of b.items) {
+    if (!it.sourcePartId) continue;
+    const idx = parts.findIndex(p => p.id === it.sourcePartId);
+    if (idx === -1) continue;                 // part already gone
+    const p = parts[idx];
+    const units = Math.min(it.qty || 1, p.qty || 1);
+    if (units <= 0) continue;
+    p.qty = (p.qty || 1) - units;
+    addToGraveyard(p, units, b);
+    moved += units;
+    if (p.qty <= 0) parts.splice(idx, 1);      // fully sold out -> leaves inventory
+  }
+  b.soldSettled = true;
+  saveParts(parts);
+  saveGraveyard(graveyard);
+  saveBuilds(builds);
+  return moved;
+}
+
+// Confirm + settle when a build transitions to Sold. Returns false if cancelled.
+function handleSoldTransition(b) {
+  if (b.status !== 'sold' || b.soldSettled) return true;
+  const units = b.items.filter(it => it.sourcePartId).reduce((s, it) => s + (it.qty || 1), 0);
+  if (units > 0) {
+    if (!confirm(`Mark "${b.name}" sold?\n\nThis removes ${units} owned part-unit(s) from your inventory and moves them to the graveyard.`)) {
+      return false;
+    }
+    const moved = settleSoldBuild(b);
+    if (moved) showToast(`☠ ${moved} part-unit(s) moved to graveyard`);
+  } else {
+    b.soldSettled = true;   // nothing sourced to move
+  }
+  return true;
+}
+
 // Inline build-status change from the header dropdown.
 function setBuildStatus(buildId, status) {
   const b = builds.find(x => x.id === buildId);
   if (!b || !BUILD_STATUSES[status]) return;
+  const prev = b.status;
   b.status = status;
+  if (!handleSoldTransition(b)) { b.status = prev; renderBuilds(); return; }
+  currentBuildTab = status;    // follow the build to its new tab
   saveBuilds(builds);
+  render();
+}
+
+// Build-status tab switching.
+function setBuildTab(tab) {
+  if (!BUILD_STATUSES[tab]) return;
+  currentBuildTab = tab;
   renderBuilds();
 }
+
+// --- Inventory ↔ build allocation ---
+// Units of an inventory part used across ACTIVE (non-sold) builds.
+function allocatedUnits(partId) {
+  let n = 0;
+  for (const b of builds) {
+    if (b.status === 'sold') continue;
+    for (const it of b.items) {
+      if (it.sourcePartId === partId) n += (it.qty || 1);
+    }
+  }
+  return n;
+}
+
+function remainingUnits(part) {
+  return (part.qty || 1) - allocatedUnits(part.id);
+}
+
+// Map: partId -> { units, builds:[{name, units}] } for active builds (cached per render).
+function computeAllocationMap() {
+  const map = {};
+  for (const b of builds) {
+    if (b.status === 'sold') continue;
+    for (const it of b.items) {
+      if (!it.sourcePartId) continue;
+      const u = it.qty || 1;
+      if (!map[it.sourcePartId]) map[it.sourcePartId] = { units: 0, builds: [] };
+      map[it.sourcePartId].units += u;
+      const e = map[it.sourcePartId].builds.find(x => x.name === b.name);
+      if (e) e.units += u; else map[it.sourcePartId].builds.push({ name: b.name, units: u });
+    }
+  }
+  return map;
+}
+
+// Allocate one unit of an inventory part to a build (soft link — stays in inventory until sold).
+function allocatePartToBuild(buildId, partId) {
+  const b = builds.find(x => x.id === buildId);
+  const p = parts.find(x => x.id === partId);
+  if (!b || !p) return false;
+  if (b.status === 'sold') { showToast('Can’t add parts to a sold build'); return false; }
+  if (remainingUnits(p) <= 0) { showToast(`All ${p.qty || 1}× "${p.name}" already allocated`); return false; }
+  const now = new Date().toISOString();
+  b.items.push({
+    id: generateId(),
+    name: p.name,
+    link: '',
+    price: p.price || 0,
+    qty: 1,
+    acquired: true,            // you own it, so it's in hand
+    sourcePartId: p.id,
+    dateAdded: now,
+    dateAcquired: now
+  });
+  saveBuilds(builds);
+  render();
+  showToast(`✓ Added "${p.name}" to ${b.name}`);
+  return true;
+}
+
+// Drag (inventory row) -> drop (build block).
+function handleInvDragStart(e, partId) {
+  e.dataTransfer.setData('text/plain', partId);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+function handleBuildDrop(e, buildId) {
+  e.preventDefault();
+  const partId = e.dataTransfer.getData('text/plain');
+  if (partId) allocatePartToBuild(buildId, partId);
+}
+
+// --- Add-from-inventory picker modal ---
+const invPickerModal = document.getElementById('invPickerModal');
+const invPickerListEl = document.getElementById('invPickerList');
+const invPickerSearchEl = document.getElementById('invPickerSearch');
+const invPickerBuildNameEl = document.getElementById('invPickerBuildName');
+let invPickerBuildId = null;
+
+function openInventoryPicker(buildId) {
+  const b = builds.find(x => x.id === buildId);
+  if (!b) return;
+  if (b.status === 'sold') { showToast('This build is sold'); return; }
+  invPickerBuildId = buildId;
+  invPickerBuildNameEl.textContent = '// ' + b.name;
+  invPickerSearchEl.value = '';
+  renderInvPicker();
+  invPickerModal.classList.remove('hidden');
+  setTimeout(() => invPickerSearchEl.focus(), 0);
+}
+
+function closeInvPicker() {
+  invPickerModal.classList.add('hidden');
+}
+
+function renderInvPicker() {
+  const search = invPickerSearchEl.value.toLowerCase().trim();
+  const avail = parts.filter(p => {
+    if (remainingUnits(p) <= 0) return false;
+    if (!search) return true;
+    return `${p.name} ${p.category} ${(p.tags || []).join(' ')}`.toLowerCase().includes(search);
+  });
+  if (avail.length === 0) {
+    invPickerListEl.innerHTML = `<div class="inv-picker-empty">No available parts${search ? ' match your filter' : ' — every unit is allocated'}.</div>`;
+    return;
+  }
+  invPickerListEl.innerHTML = avail.map(p => {
+    const rem = remainingUnits(p);
+    const ci = CATEGORIES[p.category] || { emoji: '📦' };
+    return `
+      <div class="inv-picker-row">
+        <div class="inv-picker-main">
+          <span class="part-name">${escapeHtml(p.name)}</span>
+          <span class="inv-picker-cat">${ci.emoji} ${p.category}</span>
+        </div>
+        <div class="inv-picker-side">
+          <span class="inv-picker-rem">${rem} of ${p.qty || 1} free</span>
+          <button class="ai-add-btn" onclick="allocateFromPicker('${p.id}')">[ + ADD ]</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function allocateFromPicker(partId) {
+  if (allocatePartToBuild(invPickerBuildId, partId)) {
+    renderInvPicker();   // refresh remaining counts in place
+  }
+}
+
+invPickerModal.addEventListener('click', (e) => { if (e.target === invPickerModal) closeInvPicker(); });
+invPickerSearchEl.addEventListener('input', renderInvPicker);
 
 // --- Render builds ---
 function renderBuilds() {
@@ -1259,7 +1485,17 @@ function renderBuilds() {
 
   buildsEmptyEl.style.display = 'none';
 
-  buildsListEl.innerHTML = builds.map(b => {
+  // Status tabs (in-progress | holding | sold)
+  const tabCounts = { 'in-progress': 0, 'holding': 0, 'sold': 0 };
+  builds.forEach(x => { tabCounts[BUILD_STATUSES[x.status] ? x.status : 'in-progress']++; });
+  const tab = BUILD_STATUSES[currentBuildTab] ? currentBuildTab : 'in-progress';
+  const tabsHtml = ['in-progress', 'holding', 'sold'].map(t =>
+    `<button class="build-tab tab-${t} ${t === tab ? 'active' : ''}" onclick="setBuildTab('${t}')">${BUILD_STATUSES[t].label}<span class="build-tab-count">${tabCounts[t]}</span></button>`
+  ).join('');
+
+  const shown = builds.filter(b => (BUILD_STATUSES[b.status] ? b.status : 'in-progress') === tab);
+
+  const blocksHtml = shown.map(b => {
     const status = BUILD_STATUSES[b.status] ? b.status : 'in-progress';
     const st = BUILD_STATUSES[status];
     const totalUnits = b.items.reduce((s, i) => s + (i.qty || 1), 0);
@@ -1295,7 +1531,7 @@ function renderBuilds() {
                   title="Mark acquired"
                   onclick="event.stopPropagation(); setItemAcquired('${b.id}', '${i.id}', this.checked)">
               </td>
-              <td><span class="part-name">${escapeHtml(i.name)}</span></td>
+              <td><span class="part-name">${escapeHtml(i.name)}</span>${i.sourcePartId ? ' <span class="from-inv-mark" title="Allocated from your inventory">📦</span>' : ''}</td>
               <td>${linkHtml}</td>
               <td><span class="part-qty">${qty > 1 ? 'x' + qty : qty}</span></td>
               <td><span class="part-price">${i.price ? money(i.price) : '—'}</span></td>
@@ -1335,9 +1571,13 @@ function renderBuilds() {
     const headerPL = (status === 'sold' && priceSold)
       ? `<span class="build-realized ${realized >= 0 ? 'pos' : 'neg'}">P/L ${money(realized)}</span>` : '';
     const spentLabel = budget > 0 ? `${money(committed)} / ${money(budget)}` : money(committed);
+    const dropAttrs = status !== 'sold'
+      ? `ondragover="event.preventDefault(); this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="this.classList.remove('drag-over'); handleBuildDrop(event, '${b.id}')"`
+      : '';
 
     return `
-      <div class="build-block status-block-${status} ${complete ? 'build-complete' : ''} ${overBudget ? 'build-over' : ''}">
+      <div class="build-block status-block-${status} ${complete ? 'build-complete' : ''} ${overBudget ? 'build-over' : ''}" ${dropAttrs}>
+        ${dropAttrs ? '<div class="build-drop-hint">⤓ drop part to allocate</div>' : ''}
         <div class="build-header" onclick="toggleBuildBody(this)">
           <div class="build-title">
             <span class="build-icon">🛒</span>
@@ -1375,12 +1615,18 @@ function renderBuilds() {
           </table>
           <div class="build-body-actions">
             <button class="btn-add-item" onclick="openBuildItemModal('${b.id}')">[ + ADD PART ]</button>
+            <button class="btn-from-inventory" onclick="openInventoryPicker('${b.id}')">[ 📦 FROM INVENTORY ]</button>
             <button class="btn-suggest-parts" onclick="suggestParts('${b.id}')">[ ⚡ SUGGEST PARTS (AI) ]</button>
           </div>
         </div>
       </div>
     `;
   }).join('');
+
+  const listHtml = shown.length
+    ? blocksHtml
+    : `<div class="builds-tab-empty">No ${BUILD_STATUSES[tab].short.toLowerCase()} builds.</div>`;
+  buildsListEl.innerHTML = `<div class="build-tabs">${tabsHtml}</div><div class="builds-tab-list">${listHtml}</div>`;
 }
 
 // ============================================
@@ -1668,7 +1914,7 @@ function addSuggestionToBuild(idx) {
 
   b.items.push(item);
   saveBuilds(builds);
-  renderBuilds();
+  render();
   showToast(`✓ Added "${item.name}" to ${b.name}`);
 
   // Mark the suggestion as added in the open modal.

@@ -53,11 +53,18 @@ Parts are automatically sorted into collapsible category tabs:
 
 ### PC Build Planner (Builds)
 - Create **builds / parts lists** — plan a new PC, an upgrade, a homelab, or a flip
+- **Status tabs** — builds are split into **⋯ In Progress / 📦 Holding / 💰 Sold** tabs (with counts); click a tab to show that group and hide the others
 - **Per-build budget** — set an optional cap; each build shows **Budget / Committed / Remaining** with a meter that turns red when you go over
-- **Build status** — tag the whole build **⋯ In Progress**, **📦 Holding**, or **💰 Sold** (inline on the build header, or in the edit modal)
+- **Build status** — tag the whole build In Progress / Holding / Sold (inline on the build header, or in the edit modal)
 - **Flip analysis** — record the build's **Price Listed** and **Price Sold**; once sold, the build surfaces **Cost / Listed / Sold / P&L** for data analysis
 - **Add / remove parts** with name, quantity, price, and an optional purchase link
-- **Acquired checkbox per part** — tick parts you have in hand; an acquisition progress bar fills and the build hits a "complete" state when every part is acquired
+- **Acquired checkbox per part** — tick parts you have in hand; an acquisition progress bar fills when every part is acquired
+
+### Using your inventory in builds
+- **Drag** an inventory row onto a build — or use **[ 📦 FROM INVENTORY ]** to pick from a list — to allocate that part to the build
+- Allocated parts stay in your inventory but gain a **🔧 IN USE** tag; hover it to see which build(s) it's in and how many units are allocated
+- **Quantity is the limit**: 3× of a part can go to 3 builds (one unit each); a 4th allocation is blocked
+- **Marking a build Sold** removes its allocated units from inventory and moves them to the **Graveyard** — a multi-unit part drops by the amount used, and the graveyard entry's quantity grows (consolidated); a part that hits 0 leaves the inventory list
 
 ### AI Recommendations (DeepSeek)
 - Per-build **[ ⚡ SUGGEST PARTS ]** button — DeepSeek recommends parts to complete or improve the build **within the remaining budget**

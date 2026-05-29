@@ -420,6 +420,20 @@
     </div>
   </div>
 
+  <!-- Add-from-inventory Picker Modal -->
+  <div id="invPickerModal" class="modal hidden">
+    <div class="modal-content panel">
+      <div class="panel-header">
+        <span class="panel-icon">▸</span> ADD FROM INVENTORY <span id="invPickerBuildName" class="ai-suggest-buildname"></span>
+        <span class="modal-close" onclick="closeInvPicker()">[X]</span>
+      </div>
+      <div class="inv-picker-body">
+        <input type="text" id="invPickerSearch" placeholder="🔍 Filter your inventory..." autocomplete="off">
+        <div id="invPickerList" class="inv-picker-list"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
