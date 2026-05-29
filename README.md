@@ -65,6 +65,7 @@ Parts are automatically sorted into collapsible category tabs:
 - Allocated parts stay in your inventory but gain a **🔧 IN USE** tag; hover it to see which build(s) it's in and how many units are allocated
 - **Quantity is the limit**: 3× of a part can go to 3 builds (one unit each); a 4th allocation is blocked
 - **Marking a build Sold** removes its allocated units from inventory and moves them to the **Graveyard** — a multi-unit part drops by the amount used, and the graveyard entry's quantity grows (consolidated); a part that hits 0 leaves the inventory list
+- **Reverting a build out of Sold** (back to In Progress / Holding) restores those units to your inventory and shrinks the graveyard entry — recreating the part if it had fully sold out
 
 ### AI Recommendations (DeepSeek)
 - Per-build **[ ⚡ SUGGEST PARTS ]** button — DeepSeek recommends parts to complete or improve the build **within the remaining budget**

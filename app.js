@@ -597,6 +597,8 @@ function restoreFromGraveyard(id) {
 
   const part = { ...graveyard[idx] };
   delete part.dateRemoved;
+  delete part.sourcePartId;
+  delete part.soldFromBuild;
   graveyard.splice(idx, 1);
   saveGraveyard(graveyard);
 
@@ -1107,9 +1109,15 @@ buildForm.addEventListener('submit', (e) => {
       b.name = name;
       b.notes = notes;
       b.budget = budget;
-      b.status = status;
       b.priceListed = priceListed;
       b.priceSold = priceSold;
+      // Leaving Sold -> restore parts to inventory.
+      if (prevStatus === 'sold' && status !== 'sold' && b.soldSettled) {
+        const back = unsettleSoldBuild(b);
+        if (back) showToast(`↩ ${back} part-unit(s) restored to inventory`);
+      }
+      b.status = status;
+      // Entering Sold -> confirm + settle.
       if (!handleSoldTransition(b)) { b.status = prevStatus; }
       currentBuildTab = b.status;
     }
@@ -1309,6 +1317,48 @@ function settleSoldBuild(b) {
   return moved;
 }
 
+// Reverse of settleSoldBuild: bring this build's sourced units back to inventory
+// and shrink (or remove) the consolidated graveyard entry. Recreates a part that
+// had been fully sold out, reusing its original id so links stay intact.
+function unsettleSoldBuild(b) {
+  if (!b.soldSettled) return 0;
+  let restored = 0;
+  for (const it of b.items) {
+    if (!it.sourcePartId) continue;
+    const units = it.qty || 1;
+    const gIdx = graveyard.findIndex(g => g.sourcePartId === it.sourcePartId);
+    const gEntry = gIdx !== -1 ? graveyard[gIdx] : null;
+
+    const p = parts.find(x => x.id === it.sourcePartId);
+    if (p) {
+      p.qty = (p.qty || 0) + units;                 // still in inventory -> top it up
+    } else {
+      const base = gEntry || {};                    // recreate from graveyard data (fallback to item)
+      parts.push({
+        id: it.sourcePartId,
+        name: base.name || it.name,
+        price: base.price != null ? base.price : (it.price || 0),
+        marketValue: base.marketValue || 0,
+        qty: units,
+        tags: [...(base.tags || [])],
+        category: base.category || detectCategory(base.name || it.name),
+        dateAdded: base.dateAdded || new Date().toISOString()
+      });
+    }
+
+    if (gEntry) {
+      gEntry.qty = (gEntry.qty || 1) - units;
+      if (gEntry.qty <= 0) graveyard.splice(graveyard.indexOf(gEntry), 1);
+    }
+    restored += units;
+  }
+  b.soldSettled = false;
+  saveParts(parts);
+  saveGraveyard(graveyard);
+  saveBuilds(builds);
+  return restored;
+}
+
 // Confirm + settle when a build transitions to Sold. Returns false if cancelled.
 function handleSoldTransition(b) {
   if (b.status !== 'sold' || b.soldSettled) return true;
@@ -1330,8 +1380,19 @@ function setBuildStatus(buildId, status) {
   const b = builds.find(x => x.id === buildId);
   if (!b || !BUILD_STATUSES[status]) return;
   const prev = b.status;
+  if (status === prev) return;
+
+  // Leaving Sold -> restore the parts to inventory.
+  if (prev === 'sold' && b.soldSettled) {
+    const back = unsettleSoldBuild(b);
+    if (back) showToast(`↩ ${back} part-unit(s) restored to inventory`);
+  }
+
   b.status = status;
+
+  // Entering Sold -> confirm + settle.
   if (!handleSoldTransition(b)) { b.status = prev; renderBuilds(); return; }
+
   currentBuildTab = status;    // follow the build to its new tab
   saveBuilds(builds);
   render();
